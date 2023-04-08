@@ -57,7 +57,7 @@
             <div class="col-md-6">
                 <div class="card border rounded h-100 shadow-lg" style="background-color: #1d2939;">
                     <div class="card-body">
-                        <iframe width="650" height="500" frameborder="0" scrolling="yes"
+                        <iframe width="660" height="500" frameborder="0" scrolling="yes"
                             src="//plotly.com/~Ahk294/13.embed"></iframe>
                     </div>
                 </div>
@@ -113,21 +113,22 @@
         function convertData(numericData) {
             const filteredNumericData = numericData.filter(item => item.price !== 'null');
 
+            // sorting the data by time, old to new
+            const sortedFilteredNumericData = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp);
+
             // convert the timestamp to a date string in the format YYYY-MM-DD hh:mm:ss
-            const startDate = new Date(filteredNumericData[filteredNumericData.length - 1].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+            const startDate = new Date(sortedFilteredNumericData[0].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
 
             // create an array of prices sorted in ascending order by timestamp
-            const target = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
+            const target = sortedFilteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
 
             // create the new data structure
             const newNumericData = { start: startDate, target };
 
-            // console.log(JSON.stringify(newNumericData));
-
             //Add days as X values for plot
             let xValues = [];
             newNumericData.target.forEach((value, index) => {
-                const newDate = addDays(new Date(startDate), index + 1);
+                let newDate = addDays(new Date(startDate), index + 1);
                 xValues.push(newDate);
             });
 
@@ -144,11 +145,14 @@
         function predict(numericData) {
             const filteredNumericData = numericData.filter(item => item.price !== 'null');
 
+            // sorting the data by time, old to new
+            const sortedFilteredNumericData = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp);
+
             // convert the timestamp to a date string in the format YYYY-MM-DD hh:mm:ss
-            const startDate = new Date(filteredNumericData[filteredNumericData.length - 1].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+            const startDate = new Date(sortedFilteredNumericData[0].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
 
             // create an array of prices sorted in ascending order by timestamp
-            const target = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
+            const target = sortedFilteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
 
             // create the new data structure
             const newNumericData = { start: startDate, target };
@@ -163,48 +167,29 @@
             })
                 .then(res => res.json())
                 .then(predictedData => {
-                    //Add basic X values for plot
+                    let prediction = JSON.parse(predictedData.body);
+                    //Add days as X values for plot
                     let xValues = [];
-                    for (let i = 0; i < newNumericData.target.length; ++i) {
-                        xValues.push(i);
-                    }
+                    let newDate = '';
+                    newNumericData.target.forEach((value, index) => {
+                        newDate = addDays(new Date(startDate), index + 1);
+                        xValues.push(newDate);
+                    });
 
-                    plotData(xValues, newNumericData.target, JSON.parse(predictedData.body));
+                    let xPredValues = [];
+                    let futureDates = new Date(newDate);
+                    xPredValues.push(futureDates);
+                    prediction.forEach((value, index) => {
+                        futureDates = addDays(new Date(newDate), index + 1);
+                        xPredValues.push(futureDates);
+                    });
+
+                    plotData(xValues, newNumericData.target, xPredValues, prediction);
                 })
                 .catch(error => {
                     console.error('Error predicting data:', error);
                 });
         }
-
-        // function plotPie(sentiment) {
-        //     // Count the occurrences of each value
-        //     const counts = {};
-        //     sentiment.forEach(value => {
-        //         counts[value] = counts[value] ? counts[value] + 1 : 1;
-        //     });
-
-        //     // Define the data for the chart
-        //     const chartData = [{
-        //         values: Object.values(counts),
-        //         labels: Object.keys(counts),
-        //         type: 'pie'
-        //     }];
-
-        //     // Define the layout
-        //     const layout = {
-        //         title: 'Sentiment Analysis',
-        //         plot_bgcolor: '#1D2939',
-        //         paper_bgcolor: '#1D2939',
-        //         font: {
-        //             size: 15,
-        //             color: '#FFFFFF'
-        //         },
-        //     };
-
-        //     // Create the chart
-        //     Plotly.newPlot('pie', chartData, layout);
-        // }
-
 
         function plotPie(sentiment) {
             // Count the occurrences of each value
@@ -223,9 +208,6 @@
                 textfont: {
                     color: '#FFFFFF',
                     size: 16
-                },
-                marker: {
-                    colors: ['#D5B72B', '#D64E2A', '#64C928']
                 },
             }];
 
@@ -255,7 +237,7 @@
             Plotly.newPlot('pie', chartData, layout);
         }
 
-        function plotData(xValues, yValues, yPredValues) {
+        function plotData(xValues, yValues, xPredValues, yPredValues) {
             let coinData = {
                 x: xValues,
                 y: yValues,
@@ -273,7 +255,7 @@
             };
 
             let coinPredData = {
-                x: [...xValues.slice(-1), ...xValues.map((val) => val + xValues.slice(-1)[0])],
+                x: xPredValues,
                 y: yPredValues,
                 type: "scatter",
                 mode: 'lines',
