@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Data Visualisation Website</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+</head>
+
+<body>
+    <div class="container-fluid my-4">
+        <div class="row">
+            <div class="col">
+                <div class="card border rounded shadow-lg">
+                    <div class="card-body">
+                        <div width="600" height="800" id="plot"></div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-center">
+                    <button class="btn btn-primary m-3" onclick="getCur()">Predict</button>
+                    <div class="dropdown m-3">
+                        <button class="btn btn-secondary dropdown-toggle" id="curDropdown" type="button"
+                            data-bs-toggle="dropdown" aria-expanded="false">
+                            Select Currency
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="selectCur('bitcoin')">Bitcoin</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="selectCur('dogecoin')">Dogecoin</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="selectCur('ethereum')">Ethereum</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="selectCur('busd')">Binance USD</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="selectCur('tether')">Tether</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row my-4">
+            <div class="col-md-6">
+                <div class="card border rounded h-100 shadow-lg">
+                    <div class="card-body">
+                        <div width="600" height="500" id="pie"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card border rounded h-100 shadow-lg">
+                    <div class="card-body">
+                        <iframe width="600" height="500" frameborder="0" scrolling="yes"
+                            src="//plotly.com/~Ahk294/13.embed"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedCurrency = 'bitcoin';
+
+        function selectCur(cur) {
+            selectedCurrency = cur;
+            getData(cur, false);
+        }
+
+        function getCur() {
+            getData(selectedCurrency, true);
+        }
+
+        //Open connection
+        let connection = new WebSocket("wss://8n0ybm9xa9.execute-api.us-east-1.amazonaws.com/production");
+
+        //Log connected response
+        connection.onopen = function (event) {
+            getData('bitcoin', false);
+            console.log("Connected: " + JSON.stringify(event));
+        };
+
+        //Output messages from the server
+        connection.onmessage = function (msg) {
+            const data = JSON.parse(msg.data);
+
+            console.log(data);
+
+            const numericData = data.history;
+            const sentiment = data.sentiment;
+
+            if (data.predict) {
+                convertData(numericData);
+                plotPie(sentiment);
+                predict(numericData);
+            } else {
+                convertData(numericData);
+                plotPie(sentiment);
+            }
+        };
+
+        //Log errors
+        connection.onerror = function (error) {
+            console.log("WebSocket Error: " + JSON.stringify(error));
+        };
+
+        function convertData(numericData) {
+            const filteredNumericData = numericData.filter(item => item.price !== 'null');
+
+            // convert the timestamp to a date string in the format YYYY-MM-DD hh:mm:ss
+            const startDate = new Date(filteredNumericData[filteredNumericData.length - 1].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+
+            // create an array of prices sorted in ascending order by timestamp
+            const target = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
+
+            // create the new data structure
+            const newNumericData = { start: startDate, target };
+
+            // console.log(JSON.stringify(newNumericData));
+
+            //Add basic X values for plot
+            let xValues = [];
+            for (let i = 0; i < newNumericData.target.length; ++i) {
+                xValues.push(i);
+            }
+
+            plotData(xValues, newNumericData.target);
+        }
+
+        function predict(numericData) {
+            const filteredNumericData = numericData.filter(item => item.price !== 'null');
+
+            // convert the timestamp to a date string in the format YYYY-MM-DD hh:mm:ss
+            const startDate = new Date(filteredNumericData[filteredNumericData.length - 1].timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+
+            // create an array of prices sorted in ascending order by timestamp
+            const target = filteredNumericData.sort((a, b) => a.timestamp - b.timestamp).map(point => parseFloat(point.price));
+
+            // create the new data structure
+            const newNumericData = { start: startDate, target };
+
+            // create the request body object
+            const requestBody = { newNumericData, selectedCurrency };
+
+            fetch("http://localhost:3000/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody)
+            })
+                .then(res => res.json())
+                .then(predictedData => {
+                    //Add basic X values for plot
+                    let xValues = [];
+                    for (let i = 0; i < newNumericData.target.length; ++i) {
+                        xValues.push(i);
+                    }
+
+                    plotData(xValues, newNumericData.target, JSON.parse(predictedData.body));
+                })
+                .catch(error => {
+                    console.error('Error predicting data:', error);
+                });
+        }
+
+        function plotPie(sentiment) {
+            // Count the occurrences of each value
+            const counts = {};
+            sentiment.forEach(value => {
+                counts[value] = counts[value] ? counts[value] + 1 : 1;
+            });
+
+            // Define the data for the chart
+            const chartData = [{
+                values: Object.values(counts),
+                labels: Object.keys(counts),
+                type: 'pie'
+            }];
+
+            // Define the layout
+            const layout = {
+                title: 'Sentiment Analysis'
+            };
+
+            // Create the chart
+            Plotly.newPlot('pie', chartData, layout);
+        }
+
+        function plotData(xValues, yValues, yPredValues) {
+            let coinData = {
+                x: xValues,
+                y: yValues,
+                type: "scatter",
+                mode: 'line',
+                name: "Past Data",
+                marker: {
+                    color: 'rgb(219, 64, 82)',
+                    size: 12
+                }
+            };
+
+            let coinPredData = {
+                x: [...xValues.slice(-1), ...xValues.map((val) => val + xValues.slice(-1)[0])],
+                y: yPredValues,
+                type: "scatter",
+                mode: 'line',
+                name: "Predicted Data",
+                marker: {
+                    color: 'rgb(64, 219, 82)',
+                    size: 12
+                }
+            };
+
+            let plotData = [];
+
+            if (yPredValues) {
+                plotData = [coinData, coinPredData];
+            } else {
+                plotData = [coinData];
+            }
+
+
+            let layout = {
+                title: "Numeric Data of " + selectedCurrency,
+                font: {
+                    size: 25
+                },
+                xaxis: {
+                    title: 'Time (days)'
+                },
+                yaxis: {
+                    title: 'Value'
+                }
+            };
+            let graphOptions = {
+                layout: layout,
+                filename: "Crypto",
+                fileopt: "overwrite"
+            };
+
+            // plotData(xValues, newNumericData.target);
+            Plotly.newPlot('plot', plotData, layout);
+        }
+
+        //Send message to server
+        function getData(cur, pred) {
+            let dataObject = {
+                action: "getData",//Used for routing in API Gateway
+                currency: cur,
+                predict: pred
+            };
+
+            //Send object
+            connection.send(JSON.stringify(dataObject));
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4"
+        crossorigin="anonymous"></script>
+</body>
+
+</html>
