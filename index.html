@@ -160,6 +160,12 @@
             // create the request body object
             const requestBody = { newNumericData, selectedCurrency };
 
+            // tried to create the backend on lambda
+            // https://93pxmn4ubi.execute-api.us-east-1.amazonaws.com/production/predictBackend
+
+            // currently hosted locally
+            // http://localhost:3000/predict
+
             fetch("http://localhost:3000/predict", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
